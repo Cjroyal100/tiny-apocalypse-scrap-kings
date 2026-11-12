@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Tiny Apocalypse: Scrap Kings</title>
+<style>
+:root{--bg:#111714;--panel:#1d2821;--edge:#52634f;--lime:#b7e36b;--gold:#f0c66b;--red:#e87562;--ink:#edf1dc}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0d120f;color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none}
+#game{display:block;width:100vw;height:100dvh;background:#28392b}
+#hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:10px;gap:8px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.panel{background:#111a15df;border:1px solid var(--edge);border-radius:12px;padding:8px 10px;box-shadow:0 3px 14px #0007;backdrop-filter:blur(4px)}
+.brand{font-weight:900;letter-spacing:.04em;color:var(--lime);font-size:13px}.small{font-size:11px;color:#c7d1b7}
+.stats{font-size:12px;line-height:1.55}.bar{height:7px;width:112px;background:#344235;border-radius:8px;overflow:hidden;margin-top:3px}.fill{height:100%;background:var(--lime);width:100%}
+#message{align-self:center;max-width:min(92vw,480px);text-align:center;font-size:13px;opacity:0;transition:opacity .2s}
+.bottom{display:flex;justify-content:space-between;align-items:end;gap:8px}
+.controls{display:flex;gap:7px;pointer-events:auto;align-items:end}
+button{border:1px solid #718363;background:#1a271f;color:var(--ink);border-radius:11px;padding:10px 12px;font-weight:750;font-size:12px;box-shadow:0 3px 0 #0a100c;touch-action:none}
+button:active,.active{background:#405638;transform:translateY(2px);box-shadow:0 1px 0 #0a100c}
+#stick{width:118px;height:118px;border-radius:50%;background:#101a15b8;border:2px solid #82936b88;position:relative;pointer-events:auto;touch-action:none}
+#nub{position:absolute;width:44px;height:44px;border-radius:50%;background:#c2e58a99;border:2px solid #d9f5a9;left:35px;top:35px}
+.actions{display:grid;grid-template-columns:repeat(2,auto);gap:7px}
+#modal{position:fixed;inset:0;background:#070b09c9;display:none;align-items:center;justify-content:center;padding:16px;z-index:5}
+#modal.show{display:flex}.sheet{width:min(560px,100%);max-height:88dvh;overflow:auto;background:#19241d;border:1px solid #6a8058;border-radius:18px;padding:18px;box-shadow:0 15px 60px #000b}
+h1{font-size:22px;margin:0 0 6px;color:var(--lime)}h2{font-size:17px;margin:14px 0 6px;color:var(--gold)}
+p{font-size:13px;line-height:1.5;color:#d6dfca}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.card{background:#253329;border:1px solid #4e624d;border-radius:12px;padding:10px;font-size:12px}
+.card b{color:var(--lime)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+#hint{font-size:11px;color:#cbd7bd;text-align:right;max-width:170px}
+@media(max-width:600px){.brand{font-size:11px}.stats{font-size:10px}.panel{padding:7px 8px}button{padding:10px 9px;font-size:11px}#stick{width:104px;height:104px}#nub{left:29px;top:29px}.bottom{align-items:end}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+ <div class="top">
+  <div class="panel"><div class="brand">⚙ TINY APOCALYPSE <span style="color:#f0c66b">: SCRAP KINGS</span></div><div class="small" id="location">THE GARAGE • DAY 1</div></div>
+  <div class="panel stats">
+   <div>❤ <span id="hp">100</span> &nbsp; ⚙ Scrap: <span id="scrap">0</span></div>
+   <div>Vehicle: <span id="vehicle">Junker</span> · <span id="modeLabel">On foot</span></div>
+   <div class="bar"><div class="fill" id="hpbar"></div></div>
+  </div>
+ </div>
+ <div id="message" class="panel"></div>
+ <div class="bottom">
+  <div id="stick"><div id="nub"></div></div>
+  <div class="controls">
+   <div class="actions">
+    <button id="attack">⚔ ATTACK</button><button id="interact">↔ ENTER</button>
+    <button id="switch">⛭ GARAGE</button><button id="map">☰ MENU</button>
+   </div>
+  </div>
+  <div id="hint">Explore • collect scrap • survive</div>
+ </div>
+</div>
+<div id="modal"><div class="sheet" id="sheet"></div></div>
+<script>
+(()=>{
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const $=id=>document.getElementById(id);
+let W=innerWidth,H=innerHeight,dpr=Math.min(devicePixelRatio||1,2);
+function resize(){W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+const world={w:2100,h:1600};
+const player={x:310,y:340,r:12,hp:100,maxHp:100,speed:2.4,dir:0,attack:0,inv:0};
+const car={x:390,y:350,r:20,hp:100,maxHp:100,speed:0,angle:0,boost:0,damage:12,armor:0,engine:0};
+let driving=false,scrap=0,day=1,story=true,quest=0,zone='THE GARAGE',toastTimer=0;
+let camera={x:0,y:0},keys={},joy={x:0,y:0},enemies=[],loot=[],props=[];
+const rand=(a,b)=>a+Math.random()*(b-a);
+function addEnemy(x,y,type='mite'){enemies.push({x,y,r:type==='beetle'?17:12,hp:type==='beetle'?65:30,max:type==='beetle'?65:30,type,cd:0,dead:false})}
+function addLoot(x,y,n=3){loot.push({x,y,n})}
+for(let i=0;i<26;i++){let x=rand(90,world.w-90),y=rand(90,world.h-90);props.push({x,y,r:rand(13,28),type:['can','box','rock','cap'][i%4]})}
+[[680,370],[840,600],[1120,440],[1450,850],[510,1080],[1720,330],[1800,1240]].forEach((p,i)=>addEnemy(...p,i%3===0?'beetle':'mite'));
+for(let i=0;i<35;i++)addLoot(rand(100,world.w-100),rand(100,world.h-100),Math.ceil(rand(1,5)));
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function say(s){$('message').textContent=s;$('message').style.opacity=1;toastTimer=2.6}
+function worldName(){if(player.x<650&&player.y<650)return 'THE GARAGE';if(player.x>1300)return 'THE BACKYARD';if(player.y>1000)return 'THE KITCHEN';return 'THE CARPET WASTES'}
+function openModal(title,body){$('sheet').innerHTML=`<h1>${title}</h1>${body}<div class="row"><button id="closeModal">BACK TO GAME</button></div>`;$('modal').classList.add('show');$('closeModal').onclick=()=>$('modal').classList.remove('show')}
+function menu(){openModal('SCRAP KINGS',`
+<p>A world built for giants. You're tiny, stubborn, and armed with junk. Explore the house-sized wasteland, scavenge parts, fight bugs, and build a ride worthy of a king.</p>
+<div class="grid">
+<div class="card"><b>STORY MODE</b><br>Find the three signal beacons and discover why the humans vanished.</div>
+<div class="card"><b>SANDBOX MODE</b><br>Free exploration, endless scavenging, and escalating enemy waves.</div>
+<div class="card"><b>CONTROLS</b><br>Move with the stick or WASD. Attack to fight. Enter near your car to drive.</div>
+<div class="card"><b>GOAL</b><br>Collect scrap, upgrade your car, and take down the Scrap Baron.</div>
+</div>
+<h2>Current mission</h2><p>${story?['Reach the overturned toolbox and recover the radio coil.','Activate the first signal beacon in the Backyard.','Find the second beacon in the Kitchen.','Defeat the Scrap Baron at the far edge of the wastes.'][Math.min(quest,3)]:'Sandbox is active. Make your own legend.'}</p>
+<div class="row"><button id="storyBtn">📖 STORY ${story?'ON':'OFF'}</button><button id="resetBtn">↻ NEW RUN</button></div>
+`);$('storyBtn').onclick=()=>{story=!story;menu()};$('resetBtn').onclick=()=>{player.hp=100;scrap=0;quest=0;player.x=310;player.y=340;car.x=390;car.y=350;enemies=[];[[680,370],[840,600],[1120,440],[1450,850],[510,1080],[1720,330],[1800,1240]].forEach((p,i)=>addEnemy(...p,i%3===0?'beetle':'mite'));$('modal').classList.remove('show');say('A fresh run. Make it count.')}
+}
+function garage(){openModal('JUNKYARD GARAGE',`
+<p>Spend scavenged scrap to turn your little junker into a rolling fortress.</p>
+<div class="grid">
+<div class="card"><b>Engine boost — 12 scrap</b><br>Increase driving speed.</div>
+<div class="card"><b>Scrap armor — 15 scrap</b><br>Reduce incoming vehicle damage.</div>
+<div class="card"><b>Spiked bumper — 18 scrap</b><br>Increase ramming damage.</div>
+<div class="card"><b>Patch up — 8 scrap</b><br>Restore 35 vehicle health.</div>
+</div>
+<p>Available scrap: <b>${scrap}</b> · Vehicle HP: <b>${car.hp}</b></p>
+<div class="row"><button id="engine">ENGINE (12)</button><button id="armor">ARMOR (15)</button><button id="spikes">SPIKES (18)</button><button id="repair">REPAIR (8)</button></div>
+`);const buy=(cost,fn)=>{if(scrap<cost){say('Not enough scrap!');return}scrap-=cost;fn();$('modal').classList.remove('show');updateHud();say('Upgrade installed!')};$('engine').onclick=()=>buy(12,()=>car.engine++);$('armor').onclick=()=>buy(15,()=>car.armor++);$('spikes').onclick=()=>buy(18,()=>car.damage+=8);$('repair').onclick=()=>buy(8,()=>car.hp=Math.min(car.maxHp,car.hp+35))}
+function updateHud(){$('hp').textContent=Math.ceil(player.hp);$('scrap').textContent=scrap;$('vehicle').textContent=`Junker Mk.${1+car.engine+car.armor}`;$('modeLabel').textContent=driving?'Driving':'On foot';$('hpbar').style.width=(player.hp/player.maxHp*100)+'%';$('location').textContent=zone+' • DAY '+day}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function nearestCar(){return dist(player,car)<58}
+function interact(){if(driving){driving=false;player.x=car.x+34;player.y=car.y; say('You hop out.');return}if(nearestCar()){driving=true;say('Junker engaged. Ram those bugs!');return}say('Nothing nearby to interact with. Find your junker.')}
+function attack(){if(driving){let hit=false;for(const e of enemies){if(!e.dead&&dist(car,e)<58){e.hp-=car.damage;hit=true;if(e.hp<=0)killEnemy(e)}}if(hit)say('CRUNCH! Your bumper connects.');else say('No target in ramming range.');return}
+player.attack=.22;let hit=false;for(const e of enemies){if(!e.dead&&dist(player,e)<47){e.hp-=22;hit=true;if(e.hp<=0)killEnemy(e)}}say(hit?'You whack a bug with a bent nail!':'You swing at absolutely nothing.')}
+function killEnemy(e){e.dead=true;addLoot(e.x,e.y,Math.ceil(rand(3,7)));say('Bug busted! Scrap dropped.')}
+function update(dt){let mx=joy.x+(keys.d||keys.ArrowRight?1:0)-(keys.a||keys.ArrowLeft?1:0),my=joy.y+(keys.s||keys.ArrowDown?1:0)-(keys.w||keys.ArrowUp?1:0);let len=Math.hypot(mx,my);if(len>1){mx/=len;my/=len}
+if(driving){if(len>.05){car.angle=Math.atan2(my,mx);car.speed=clamp(car.speed+len*.16,-2.4,4.5+car.engine*.45)}else car.speed*=.91;car.x+=Math.cos(car.angle)*car.speed;car.y+=Math.sin(car.angle)*car.speed;car.x=clamp(car.x,25,world.w-25);car.y=clamp(car.y,25,world.h-25);if(Math.abs(car.speed)<.08)car.speed=0}
+else{player.x=clamp(player.x+mx*player.speed,15,world.w-15);player.y=clamp(player.y+my*player.speed,15,world.h-15);if(len>.1)player.dir=Math.atan2(my,mx)}
+if(player.attack>0)player.attack-=dt;if(player.inv>0)player.inv-=dt;
+for(const e of enemies){if(e.dead)continue;let target=driving?car:player,d=dist(e,target);if(d<310){let a=Math.atan2(target.y-e.y,target.x-e.x);e.x+=Math.cos(a)*(e.type==='beetle'?.85:1.15);e.y+=Math.sin(a)*(e.type==='beetle'?.85:1.15);if(d<e.r+ (driving?car.r:player.r)+5&&e.cd<=0){if(driving)car.hp=Math.max(0,car.hp-(8-car.armor*2));else if(player.inv<=0){player.hp=Math.max(0,player.hp-9);player.inv=.8}e.cd=.9}}
+if(e.cd>0)e.cd-=dt}
+let actor=driving?car:player;for(let i=loot.length-1;i>=0;i--){if(dist(actor,loot[i])<27){scrap+=loot[i].n;loot.splice(i,1);updateHud();}}
+if(car.hp<=0&&driving){driving=false;car.hp=1;say('Your junker is wrecked! Retreat and repair it.')}
+if(player.hp<=0){player.hp=100;player.x=310;player.y=340;car.x=390;car.y=350;scrap=Math.max(0,scrap-10);driving=false;day++;say('You blacked out and woke up at camp. Lost 10 scrap.')}
+zone=worldName();camera.x=clamp((driving?car.x:player.x)-W/2,0,world.w-W);camera.y=clamp((driving?car.y:player.y)-H/2,0,world.h-H);
+if(story&&quest===0&&player.x>620&&player.y<520){quest=1;scrap+=10;say('Radio coil recovered! +10 scrap. First beacon is in the Backyard.')}
+if(story&&quest===1&&player.x>1500&&player.y<650){quest=2;say('Beacon one activated. A signal answers from the Kitchen!')}
+if(story&&quest===2&&player.y>1250){quest=3;say('Second beacon online. Something huge is moving in the wastes...')}
+if(story&&quest===3&&player.x>1900&&player.y>1300&&!enemies.some(e=>e.type==='boss'&&!e.dead)){addEnemy(1930,1370,'boss');let b=enemies[enemies.length-1];b.r=32;b.hp=b.max=260;b.type='boss';say('THE SCRAP BARON has arrived!')}
+if(toastTimer>0){toastTimer-=dt;if(toastTimer<=0)$('message').style.opacity=0}
+}
+function draw(){ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(-camera.x,-camera.y);
+ctx.fillStyle='#344b35';ctx.fillRect(0,0,world.w,world.h);
+// ground tiles
+for(let x=0;x<world.w;x+=90)for(let y=0;y<world.h;y+=90){ctx.fillStyle=((x/90+y/90)%2?'#3a523a':'#354a36');ctx.fillRect(x,y,88,88)}
+// region landmarks
+ctx.fillStyle='#65714c';ctx.fillRect(90,90,500,430);ctx.strokeStyle='#b2b87a';ctx.lineWidth=5;ctx.strokeRect(90,90,500,430);
+ctx.fillStyle='#d1d5a0';ctx.font='bold 24px system-ui';ctx.fillText('THE GARAGE',115,130);
+ctx.fillStyle='#5a7548';ctx.fillRect(1320,100,650,480);ctx.strokeRect(1320,100,650,480);ctx.fillStyle='#d1d5a0';ctx.fillText('BACKYARD',1350,140);
+ctx.fillStyle='#76654a';ctx.fillRect(100,1120,650,390);ctx.strokeRect(100,1120,650,390);ctx.fillStyle='#f0d19a';ctx.fillText('KITCHEN',130,1160);
+// objects
+for(const p of props){ctx.fillStyle=({can:'#a9a58a',box:'#98714a',rock:'#777f72',cap:'#c18a4c'})[p.type];ctx.beginPath();ctx.roundRect(p.x-p.r,p.y-p.r,p.r*2,p.r*2,5);ctx.fill();ctx.strokeStyle='#26372a';ctx.stroke()}
+for(const l of loot){ctx.fillStyle='#f2c85f';ctx.beginPath();ctx.arc(l.x,l.y,5,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff1b5';ctx.fillRect(l.x-2,l.y-2,4,4)}
+for(const e of enemies){if(e.dead)continue;ctx.fillStyle=e.type==='boss'?'#9d4051':e.type==='beetle'?'#8a4b39':'#b3a34b';ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#211d19';ctx.lineWidth=3;ctx.stroke();ctx.fillStyle='#f5e6b5';ctx.fillRect(e.x-6,e.y-4,4,4);ctx.fillRect(e.x+3,e.y-4,4,4);ctx.fillStyle='#241c19';ctx.fillRect(e.x-e.r,e.y-e.r-9,e.r*2,4);ctx.fillStyle='#e56c5c';ctx.fillRect(e.x-e.r,e.y-e.r-9,e.r*2*(e.hp/e.max),4)}
+// car
+ctx.save();ctx.translate(car.x,car.y);ctx.rotate(car.angle);ctx.fillStyle='#1c211d';ctx.fillRect(-24,-16,48,32);ctx.fillStyle='#b47a42';ctx.fillRect(-19,-13,38,26);ctx.fillStyle='#536e60';ctx.fillRect(-5,-10,15,20);ctx.fillStyle='#202820';ctx.fillRect(-18,-20,10,6);ctx.fillRect(9,-20,10,6);ctx.fillRect(-18,14,10,6);ctx.fillRect(9,14,10,6);ctx.fillStyle='#e8c36b';ctx.fillRect(17,-5,5,10);ctx.restore();
+// player
+ctx.save();ctx.translate(player.x,player.y);ctx.fillStyle=player.inv>0?'#ffffff':'#d9e0b0';ctx.beginPath();ctx.arc(0,0,player.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#547d56';ctx.fillRect(-7,-5,14,12);ctx.rotate(player.dir);ctx.fillStyle='#d5b66b';ctx.fillRect(5,-3,15,5);ctx.restore();
+ctx.restore();
+ctx.fillStyle='#fff';ctx.font='12px system-ui';ctx.fillText('N',W-24,28);
+}
+let last=performance.now();function loop(t){let dt=Math.min((t-last)/1000,.04);last=t;update(dt);draw();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+addEventListener('keydown',e=>{keys[e.key]=true;if(e.key===' '){e.preventDefault();attack()}if(e.key.toLowerCase()==='e')interact();if(e.key.toLowerCase()==='g')garage();if(e.key.toLowerCase()==='m')menu()});
+addEventListener('keyup',e=>keys[e.key]=false);
+$('attack').addEventListener('pointerdown',e=>{e.preventDefault();attack()});$('interact').onclick=interact;$('switch').onclick=garage;$('map').onclick=menu;
+let stick=$('stick'),nub=$('nub'),pointer=null;
+stick.addEventListener('pointerdown',e=>{pointer=e.pointerId;stick.setPointerCapture(pointer);moveStick(e)});
+stick.addEventListener('pointermove',e=>{if(e.pointerId===pointer)moveStick(e)});
+function moveStick(e){let r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,max=35,l=Math.hypot(dx,dy);if(l>max){dx=dx/l*max;dy=dy/l*max}joy.x=dx/max;joy.y=dy/max;nub.style.left=(r.width/2-22+dx)+'px';nub.style.top=(r.height/2-22+dy)+'px'}
+function resetStick(){pointer=null;joy.x=joy.y=0;nub.style.left='29px';nub.style.top='29px'}
+stick.addEventListener('pointerup',resetStick);stick.addEventListener('pointercancel',resetStick);
+updateHud();say('Welcome, scavenger. Your junker is parked nearby. Tap ENTER to drive.'); 
+})();
+</script>
+</body>
+</html>
